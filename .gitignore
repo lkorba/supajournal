@@ -1,0 +1,15 @@
+# Dependencies / build artifacts
+node_modules/
+.DS_Store
+*.log
+
+# Local-only files with secrets / one-off test data
+# BACKEND_REPORT.md contains the Supabase service_role JWT for the
+# test project — keep it out of source control.
+BACKEND_REPORT.md
+migrations/
+test-results/
+
+# Editor
+.idea/
+.vscode/

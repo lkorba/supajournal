@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6efdc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1714" media="(prefers-color-scheme: dark)" />
+    <title>Quiet — a journal</title>
+    <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Ctext%20y%3D%2226%22%20font-size%3D%2226%22%3E%E2%9C%A6%3C%2Ftext%3E%3C%2Fsvg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+    <!--
+      highlight.js is loaded as a classic <script> (no defer) so it
+      runs synchronously before the parser reaches the app module at
+      the end of <body>. The standard highlight.js bundle ships with
+      the most common languages (JavaScript, Python, Bash, JSON, CSS,
+      HTML, SQL, etc.).
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <!--
+      The integration task fills this object in with the real anon key
+      and project URL. While empty, the app boots in mock mode and uses
+      canned data so the UI is demoable.
+    -->
+    <script>
+      window.__JOURNAL_CONFIG__ = {
+        url: "https://zydialuhldkaahjakuxe.supabase.red",
+        anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5ZGlhbHVobGRrYWFoamFrdXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MTY0MDQsImV4cCI6MjEwMDM5MjQwNH0._2jYFhbxP4EJ6O0mbHCHUgWJ2yR0RY5Vx5eDBAbYJGQ",
+        useMock: false,
+      };
+    </script>
+
+    <div id="app" class="app-root" data-mode="mock">
+      <!--
+        Initial loading shell so the page is never blank. The app will
+        replace this on boot.
+      -->
+      <div class="boot-shell">
+        <div class="brand">
+          <div class="brand-mark">✦</div>
+          <div class="brand-name">Quiet</div>
+        </div>
+        <p class="boot-text">Loading…</p>
+      </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
