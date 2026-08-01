@@ -34,8 +34,38 @@ function notify(event, session) {
   }
 }
 
+// Supabase stores the session under a key like
+// `sb-<project-ref>-auth-token`. We need the project ref to read it.
+function supabaseStorageKey() {
+  try {
+    return window?.__quiet?.config?.supabaseUrlRef || "";
+  } catch (_) {
+    return "";
+  }
+}
+
 export const auth = {
   isMock: isMockMode,
+
+  /**
+   * Returns the current user's id (synchronous), or null if signed out.
+   * In mock mode this reads from the in-memory mock session.
+   */
+  userId() {
+    if (isMockMode) {
+      return mockUser?.id || null;
+    }
+    try {
+      // Supabase JS stores the session in localStorage. Avoid an async
+      // hop when callers just need the id for client-side writes.
+      const raw = localStorage.getItem("sb-" + supabaseStorageKey() + "-auth-token");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.user?.id || null;
+    } catch (_) {
+      return null;
+    }
+  },
 
   /**
    * Subscribe to auth state changes.

@@ -14,6 +14,7 @@ import { renderMarkdownToHtml } from "../markdown.js";
 import { uploadImage, signImagePaths, deleteImage } from "../images.js";
 import { isMockMode } from "../config.js";
 import { makeThemeToggle } from "../theme.js";
+import { journalState } from "../journal-state.js";
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -46,6 +47,7 @@ function todayIso() {
 
 export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDeleted }) {
   let entry = null;
+  let journals = journalState.getCachedJournals() || [];
   let loading = true;
   let saving = false;
   let savingError = "";
@@ -61,6 +63,9 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
   const inflight = new Set();
   // Body editor mode: "write" or "preview".
   let bodyMode = "write";
+  // The journal the new entry will be filed under. Initialised below
+  // from the active journal (or default journal, if known).
+  let stateJournalId = null;
 
   // ----- Header / back -----
   const backBtn = el(
@@ -286,6 +291,28 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     }
   }
 
+  // Journal selector — shown in the form so the user can file the
+  // entry under any of their journals. New entries default to the
+  // active journal (or, if there isn't one, the user's default
+  // journal). For existing entries we use the entry's current
+  // journal_id (resolved after we load it).
+  const journalSelect = el("select", {
+    class: "input editor-journal-select",
+    attrs: { id: "editor-journal-select", "aria-label": "Journal" },
+  });
+  journalSelect.appendChild(
+    el("option", { attrs: { value: "" }, text: "No journal" })
+  );
+  for (const j of journals) {
+    const opt = document.createElement("option");
+    opt.value = j.id;
+    opt.textContent = `${j.icon || "📓"}  ${j.name}`;
+    journalSelect.appendChild(opt);
+  }
+  journalSelect.addEventListener("change", () => {
+    stateJournalId = journalSelect.value || null;
+  });
+
   // Save / delete
   const status = el("div", { class: "editor-status", attrs: { id: "editor-status" } });
   const errorEl = el("div", { class: "auth-error", attrs: { id: "editor-error" } });
@@ -350,6 +377,12 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         moodGroup,
       ]),
     ]),
+    el("div", { class: "editor-row" }, [
+      el("label", { class: "editor-label" }, [
+        el("span", { text: "Journal" }),
+        journalSelect,
+      ]),
+    ]),
     errorEl,
     el("div", { class: "editor-actions" }, [
       deleteBtn,
@@ -384,39 +417,92 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
 
   // Init: load existing or set defaults
   if (entryId) {
-    db.getEntry(entryId).then(async ({ data, error }) => {
-      loading = false;
-      if (error || !data) {
-        showError("Couldn't load that entry.");
-        return;
+    Promise.all([db.listJournals(userId), db.getEntry(entryId)]).then(
+      async ([jRes, eRes]) => {
+        loading = false;
+        if (jRes.error) {
+          // Journals failing to load is non-fatal for editing an
+          // existing entry; we just leave the selector empty.
+          // eslint-disable-next-line no-console
+          console.warn("Could not load journals:", jRes.error);
+        } else {
+          journals = jRes.data || [];
+          journalState.setCachedJournals(journals);
+          rebuildJournalSelect(data.journal_id);
+        }
+        if (eRes.error || !eRes.data) {
+          showError("Couldn't load that entry.");
+          return;
+        }
+        const data = eRes.data;
+        entry = data;
+        titleInput.value = data.title || "";
+        bodyTextarea.value = data.body || "";
+        dateInput.value = data.entry_date || todayIso();
+        setMood(Number.isFinite(data.mood) ? data.mood : 3);
+        state.title = data.title || "";
+        state.body = data.body || "";
+        state.mood = Number.isFinite(data.mood) ? data.mood : 3;
+        state.entry_date = data.entry_date || todayIso();
+        stateJournalId = data.journal_id || null;
+        imagePaths = Array.isArray(data.image_paths) ? [...data.image_paths] : [];
+        if (imagePaths.length > 0 && !isMockMode) {
+          try {
+            const signed = await signImagePaths(imagePaths);
+            for (const { path, url } of signed) signedUrlByPath.set(path, url);
+          } catch (_) { /* ok */ }
+        }
+        paintImageGrid();
+        updateDeleteVisibility();
       }
-      entry = data;
-      titleInput.value = data.title || "";
-      bodyTextarea.value = data.body || "";
-      dateInput.value = data.entry_date || todayIso();
-      setMood(Number.isFinite(data.mood) ? data.mood : 3);
-      state.title = data.title || "";
-      state.body = data.body || "";
-      state.mood = Number.isFinite(data.mood) ? data.mood : 3;
-      state.entry_date = data.entry_date || todayIso();
-      imagePaths = Array.isArray(data.image_paths) ? [...data.image_paths] : [];
-      if (imagePaths.length > 0 && !isMockMode) {
-        try {
-          const signed = await signImagePaths(imagePaths);
-          for (const { path, url } of signed) signedUrlByPath.set(path, url);
-        } catch (_) { /* ok */ }
-      }
-      paintImageGrid();
-      updateDeleteVisibility();
-    });
+    );
   } else {
-    loading = false;
-    setMood(3);
-    dateInput.value = todayIso();
-    updateDeleteVisibility();
-    paintImageGrid();
-    // Focus the title for a quick keyboard flow.
-    setTimeout(() => titleInput.focus(), 0);
+    // New entry: load journals, default the selector to the active
+    // journal (or the user's default journal, or "No journal").
+    db.listJournals(userId)
+      .then(({ data, error }) => {
+        if (error) {
+          // Non-fatal; we just leave the selector empty.
+          // eslint-disable-next-line no-console
+          console.warn("Could not load journals:", error);
+          return;
+        }
+        journals = data || [];
+        journalState.setCachedJournals(journals);
+        // Resolve the default journal id (might be a freshly created
+        // user with only the auto-created "Daily" journal).
+        const defaultJournal = journals.find((j) => j.is_default);
+        const active = journalState.getActiveJournalId();
+        const target =
+          (active && journals.some((j) => j.id === active) && active) ||
+          (defaultJournal && defaultJournal.id) ||
+          null;
+        stateJournalId = target;
+        rebuildJournalSelect(target);
+      })
+      .finally(() => {
+        loading = false;
+        setMood(3);
+        dateInput.value = todayIso();
+        updateDeleteVisibility();
+        paintImageGrid();
+        // Focus the title for a quick keyboard flow.
+        setTimeout(() => titleInput.focus(), 0);
+      });
+  }
+
+  function rebuildJournalSelect(selectedId) {
+    journalSelect.replaceChildren();
+    journalSelect.appendChild(
+      el("option", { attrs: { value: "" }, text: "No journal" })
+    );
+    for (const j of journals) {
+      const opt = document.createElement("option");
+      opt.value = j.id;
+      opt.textContent = `${j.icon || "📓"}  ${j.name}`;
+      journalSelect.appendChild(opt);
+    }
+    journalSelect.value = selectedId || "";
   }
 
   function updateDeleteVisibility() {
@@ -453,6 +539,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     const originalLabel = saveBtn.textContent;
     saveBtn.textContent = "Saving…";
     try {
+      const journalId = stateJournalId || journalSelect.value || null;
       if (entryId) {
         const { data, error } = await db.updateEntry(entryId, {
           title,
@@ -460,6 +547,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
           mood,
           entry_date,
           image_paths: imagePaths,
+          journal_id: journalId,
         });
         if (error) throw error;
         entry = data;
@@ -474,6 +562,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
           mood,
           entry_date,
           image_paths: imagePaths,
+          journal_id: journalId,
         });
         if (error) throw error;
         entry = data;

@@ -16,6 +16,7 @@ import { renderLoginView } from "./views/login.js";
 import { renderTimelineView } from "./views/timeline.js";
 import { renderEditorView } from "./views/editor.js";
 import { renderReaderView } from "./views/reader.js";
+import { renderJournalsView } from "./views/journals.js";
 
 const root = () => document.getElementById("app");
 
@@ -30,9 +31,11 @@ function parseRoute(hash) {
   //   "/new"               -> editor (new entry)
   //   "/entry/<id>"        -> reader
   //   "/entry/<id>/edit"   -> editor (edit existing)
+  //   "/journals"          -> journal management
   const clean = (hash || "").replace(/^#/, "");
   if (clean === "" || clean === "/") return { name: "timeline", entryId: null };
   if (clean === "/new") return { name: "editor", entryId: null };
+  if (clean === "/journals") return { name: "journals", entryId: null };
   const m = clean.match(/^\/entry\/([\w-]+)(?:\/(edit))?$/);
   if (m) {
     return m[2] === "edit"
@@ -49,6 +52,7 @@ function setRoute(next, { replace = false } = {}) {
   if (next.name === "editor" && next.entryId) hash = `#/entry/${next.entryId}/edit`;
   else if (next.name === "editor" && !next.entryId) hash = "#/new";
   else if (next.name === "reader" && next.entryId) hash = `#/entry/${next.entryId}`;
+  else if (next.name === "journals") hash = "#/journals";
   if (replace) {
     history.replaceState(null, "", hash);
   } else {
@@ -77,12 +81,20 @@ function render() {
   const userEmail = session.user?.email || "";
   if (route.name === "timeline") {
     renderTimelineView(root(), {
+      userId,
       userEmail,
       onNewEntry: () => setRoute({ name: "editor", entryId: null }),
       onOpenEntry: (id) => setRoute({ name: "reader", entryId: id }),
       onEditEntry: (id) => setRoute({ name: "editor", entryId: id }),
       onDeleteEntry: (id) => deleteEntryAndGoHome(id),
       onSignOut: () => signOut(),
+      onManageJournals: () => setRoute({ name: "journals", entryId: null }),
+    });
+  } else if (route.name === "journals") {
+    renderJournalsView(root(), {
+      userId,
+      userEmail,
+      onBack: () => setRoute({ name: "timeline", entryId: null }, { replace: true }),
     });
   } else if (route.name === "reader") {
     renderReaderView(root(), {
