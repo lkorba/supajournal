@@ -9,6 +9,7 @@ import { renderMarkdownToHtml } from "../markdown.js";
 import { signImagePaths } from "../images.js";
 import { isMockMode } from "../config.js";
 import { makeThemeToggle } from "../theme.js";
+import { journalState } from "../journal-state.js";
 
 // ----- DOM helper -----
 function el(tag, props = {}, children = []) {
@@ -59,17 +60,21 @@ function truncate(s, n) {
 }
 
 export function renderTimelineView(root, {
+  userId: userIdProp,
   onOpenEntry,
   onEditEntry,
   onDeleteEntry,
   onNewEntry,
   onSignOut,
+  onManageJournals,
   userEmail,
 }) {
   let allEntries = [];
+  let journals = [];
   let searchTerm = "";
   let loading = true;
   let errorMsg = "";
+  let activeJournalId = journalState.getActiveJournalId();
   // Signed URLs persist across paint() calls. We also keep a set of
   // paths we have already requested, so a re-paint (e.g. after a search
   // filter changes) does not re-sign the same paths. This also stops
@@ -81,6 +86,7 @@ export function renderTimelineView(root, {
   // request, so an in-flight signImagePaths from an earlier paint
   // doesn't re-render the timeline after the user has navigated away.
   let paintEpoch = 0;
+  let loadEpoch = 0;
 
   // ----- Header -----
   const headerEmail = el("span", {
@@ -89,11 +95,43 @@ export function renderTimelineView(root, {
   });
   headerEmail.id = "header-email";
 
+  // Journal switcher: a <select> is the simplest accessible dropdown
+  // that works on every platform. It also fits the warm, minimal look
+  // of the app when styled correctly.
+  const journalSelect = el("select", {
+    class: "journal-switcher",
+    attrs: { id: "journal-switcher", "aria-label": "Filter by journal" },
+  });
+  // The "All" option is added after we know the user's journal list.
+  journalSelect.appendChild(
+    el("option", { attrs: { value: "" }, text: "All journals" })
+  );
+  journalSelect.addEventListener("change", () => {
+    const v = journalSelect.value || null;
+    activeJournalId = v;
+    journalState.setActiveJournalId(v);
+    load();
+  });
+
+  const manageJournalsBtn = el(
+    "button",
+    {
+      class: "btn btn-ghost btn-small",
+      attrs: { id: "manage-journals-btn", title: "Manage journals" },
+      on: { click: () => onManageJournals?.() },
+    },
+    "⚙ Journals"
+  );
+
   const header = el("header", { class: "app-header" }, [
     el("div", { class: "app-header-inner" }, [
       el("div", { class: "brand brand-small" }, [
         el("div", { class: "brand-mark", text: "✦" }),
         el("div", { class: "brand-name", text: "Quiet" }),
+      ]),
+      el("div", { class: "header-journal-bar" }, [
+        journalSelect,
+        manageJournalsBtn,
       ]),
       el("div", { class: "header-actions" }, [
         makeThemeToggle(),
@@ -159,21 +197,67 @@ export function renderTimelineView(root, {
     loading = true;
     errorMsg = "";
     paint();
-    db.listEntries()
-      .then(({ data, error }) => {
+    const myEpoch = ++loadEpoch;
+    Promise.all([
+      db.listJournals(userId()),
+      db.listEntries({
+        journalId: journalState.getActiveJournalId() || null,
+      }),
+    ])
+      .then(([jRes, eRes]) => {
+        if (myEpoch !== loadEpoch) return; // a newer load started; drop
         loading = false;
-        if (error) {
-          errorMsg = error.message || "Could not load entries.";
+        if (jRes.error) {
+          errorMsg = jRes.error.message || "Could not load journals.";
+          return paint();
+        }
+        journals = jRes.data || [];
+        journalState.setCachedJournals(journals);
+        rebuildJournalSelect();
+        if (eRes.error) {
+          errorMsg = eRes.error.message || "Could not load entries.";
         } else {
-          allEntries = data || [];
+          allEntries = eRes.data || [];
         }
         paint();
       })
       .catch((e) => {
+        if (myEpoch !== loadEpoch) return;
         loading = false;
         errorMsg = e?.message || "Could not load entries.";
         paint();
       });
+  }
+
+  function userId() {
+    return userIdProp || null;
+  }
+
+  function rebuildJournalSelect() {
+    // Remember current value before rebuilding.
+    const current = journalSelect.value || "";
+    journalSelect.replaceChildren();
+    journalSelect.appendChild(
+      el("option", { attrs: { value: "" }, text: "All journals" })
+    );
+    for (const j of journals) {
+      const opt = el("option", { attrs: { value: j.id } }, [
+        el("span", { text: (j.icon || "📓") + " " }),
+        el("span", { text: j.name }),
+      ]);
+      // The select can only render text content, so we set the option
+      // text directly with the icon as a prefix.
+      opt.textContent = `${j.icon || "📓"}  ${j.name}`;
+      journalSelect.appendChild(opt);
+    }
+    // Restore the active selection (or default to active journal id).
+    const wanted = journalState.getActiveJournalId() || "";
+    if (wanted && journals.some((j) => j.id === wanted)) {
+      journalSelect.value = wanted;
+    } else {
+      journalSelect.value = "";
+      if (wanted) journalState.setActiveJournalId(null);
+    }
   }
 
   function paint() {

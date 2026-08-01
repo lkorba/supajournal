@@ -30,6 +30,19 @@ const userConfig =
 export const config = Object.freeze({
   ...DEFAULT_CONFIG,
   ...userConfig,
+  // Derived: the project ref is the host of the URL minus `.supabase.*`.
+  // Used to read the Supabase JS session out of localStorage
+  // (`sb-<ref>-auth-token`) without an async round-trip.
+  get supabaseUrlRef() {
+    try {
+      const u = new URL(config.url || "");
+      const host = u.host || "";
+      const m = host.match(/^([a-z0-9]+)\.supabase\./);
+      return m ? m[1] : "";
+    } catch (_) {
+      return "";
+    }
+  },
 });
 
 export const isMockMode = config.useMock || !config.url || !config.anonKey;
