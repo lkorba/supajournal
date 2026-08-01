@@ -11,6 +11,12 @@ Storage).
 
 ![light](https://img.shields.io/badge/theme-warm%20paper-f6efdc) ![dark](https://img.shields.io/badge/theme-warm%20dark-1a1714)
 
+## Live demo
+
+A reference deployment is at <https://ptk2cvwqbglw7.space.minimax.io>.
+The `dist/` directory is ready to drop on any static host (Netlify,
+Vercel, S3+CloudFront, GitHub Pages, etc.) — no build step.
+
 ## Stack
 
 - **Supabase** — Postgres 15+ (auth, RLS, REST via PostgREST, Storage)

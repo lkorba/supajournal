@@ -1,110 +1,133 @@
 # Integration Report — Quiet Journal
 
-**Project ref:** `zydialuhldkaahjakuxe`
-**Project URL:** `https://zydialuhldkaahjakuxe.supabase.red`
-**Deployed:** https://o5qco1jz96rtj.space.minimax.io
+**Live URL:** https://ptk2cvwqbglw7.space.minimax.io
+**Repo:** https://github.com/lkorba/supajournal
 **Date:** 2026-08-01
 
 ## What shipped
 
 A DayOne-style web journal: email/password auth, timeline of entries
-grouped by date, search, new/edit/delete entries, mood selector
-(1–5), calm DayOne-inspired aesthetic, mobile-responsive, dark mode
-respecting `prefers-color-scheme`.
+grouped by date, full-content cards with markdown + image previews,
+search, new/edit/delete entries, mood selector (1–5), dark/light theme
+toggle, mobile-responsive.
 
 | Layer | Stack |
 |---|---|
 | Database | Postgres 17 (Supabase) on `*.supabase.red` |
-| Auth | Supabase Auth (GoTrue) — email/password |
+| Auth | Supabase Auth (GoTrue) — email/password, autoconfirm enabled |
 | Frontend | Vanilla HTML + ES modules + Supabase JS (CDN), no build step |
-| Hosting | Static deploy via `website_deploy` |
+| Markdown | `marked` + `DOMPurify` + `highlight.js` (theme-aware) |
+| Images | Supabase Storage, private bucket + signed URLs |
+| Hosting | Static deploy (`dist/`) |
+
+## Live URL
+
+The current deployment is at:
+
+**https://ptk2cvwqbglw7.space.minimax.io**
+
+(Six earlier deployment URLs were retired; only the current one is live.)
 
 ## Schema and RLS
 
 Two tables, both with **FORCE ROW LEVEL SECURITY**:
 
 - `public.profiles` — auto-created on signup via trigger `handle_new_user`
-- `public.entries` — user_id, title, body, mood (1–5), entry_date, timestamps
+- `public.entries` — user_id, title, body, mood (1–5), entry_date,
+  image_paths (text[]), timestamps
 
 Seven policies, no `USING (true)`, no missing SELECT alongside UPDATE:
 
 - `entries_select_own`, `entries_insert_own`, `entries_update_own`, `entries_delete_own`
 - `profiles_select_own`, `profiles_insert_own`, `profiles_update_own`
 
-## End-to-end test results (live, on the correct project)
+Storage: one private bucket `journal-images` with four policies
+(`select/insert/update/delete` scoped to `auth.uid()`'s folder).
 
-Two test users were created earlier by the backend task:
+The full SQL lives in [`schema.sql`](./schema.sql).
 
-| Email | Password |
-|---|---|
-| `tester1+journal@supabase-journal-test.com` | `TestPass123!Secret` |
-| `tester2+journal@supabase-journal-test.com` | `TestPass123!Secret` |
+## End-to-end test results
 
-Live HTTP results after integration:
+Live HTTP results against the project's API:
 
 | # | Check | Result |
 |---|---|---|
-| 1 | tester1 INSERT entry with own `user_id` | 201 (row created) |
-| 2 | tester1 SELECT entries | 2 rows, both `user_id = tester1` |
-| 3 | tester2 INSERT entry with own `user_id` | 201 |
-| 4 | tester2 SELECT entries | 1 row, `user_id = tester2` |
-| 5 | tester1 PATCH tester2's row | HTTP 204, 0 rows updated |
-| 6 | tester2 SELECT — title still `T2 from E2E` (unchanged) | ✅ |
-| 7 | Cross-user SELECT isolation: tester1 sees 2 rows, tester2 sees 1 row | ✅ |
-| 8 | `service_role` key not present in any shipped JS file | ✅ (only in safety comments) |
-| 9 | Project count on `api.supabase.green`: still 80 | ✅ no collateral damage |
-| 10 | Anon key in deployed page decodes to `ref: zydialuhldkaahjakuxe`, `role: anon` | ✅ |
+| 1 | Sign up a fresh user | 200 (mailer_autoconfirm on) |
+| 2 | Sign in | 200 + access_token |
+| 3 | Insert entry with own `user_id` | 201 |
+| 4 | Insert entry with **another** user's `user_id` | 403 RLS WITH CHECK violation |
+| 5 | SELECT entries as user A | only user A's rows |
+| 6 | PATCH another user's row | 0 rows updated (RLS blocks silently) |
+| 7 | DELETE another user's row | 0 rows deleted |
+| 8 | Upload to own folder in `journal-images` | 200, file stored |
+| 9 | Upload to another user's folder | 403 RLS rejection |
+| 10 | Signed URL generation | 422-char token returned |
+| 11 | Cross-user image list | empty (RLS denies) |
 
-## Fix vs. the original backend report
+For the exact test transcript and SQL, see
+[`BACKEND_REPORT.md`](./BACKEND_REPORT.md) (with secrets redacted).
 
-The backend report's `BACKEND_REPORT.md` documented the wrong anon
-key — it was for a different project (`zwhialuhldkaahjakuxe` instead
-of `zydialuhldkaahjakuxe`). The schema was applied to the correct
-project, but the report had a copy-paste error in section 1. The
-correct anon key was re-fetched from `GET /v1/projects/{ref}/api-keys`
-and verified to work end-to-end before deploy.
+## Fixes applied during development
 
-The service_role key never leaves the server side. The deployed JS
-bundle only contains the anon key (which is designed to be public).
+The app went through eight iterations during build. Notable fixes:
+
+- **POST /entries sent a custom `id`** like `e-rv4ysgqt` (a mock-mode
+  helper that leaked into live code). The DB rejected it with
+  `invalid input syntax for type uuid: "e-rv4ysgqt"`. Fix: in live
+  mode, omit `id`/`created_at`/`updated_at` so the DB defaults apply.
+- **Image-signing caused an infinite re-render loop** — each `paint()`
+  fired another `signImagePaths()` whose `.then()` called `paint()`
+  again. Fix: hoist `signedUrlByPath` and a `signingInFlight` Set
+  to the closure scope, plus a `paintEpoch` counter to ignore
+  stale resolutions.
+- **Signup rate-limited** — Supabase's email-sending limit was
+  exceeded. Fix: enabled `mailer_autoconfirm` on the project so
+  signups don't trigger an email round-trip.
 
 ## File map
 
 ```
 /workspace/journal-app/
-├── BACKEND_REPORT.md        # schema + RLS + isolation test results
+├── README.md                # setup walkthrough
+├── schema.sql               # full database + storage setup
+├── BACKEND_REPORT.md        # SQL transcript, secrets REDACTED
 ├── FRONTEND_REPORT.md       # UI implementation notes
 ├── INTEGRATION_REPORT.md    # this file
-├── E2E_LOG.md               # (optional) raw HTTP log
-└── dist/                    # deployed to https://o5qco1jz96rtj.space.minimax.io
+└── dist/                    # deployed to the live URL
     ├── index.html           # single page, hash router, config inline
     ├── app.js               # boot + router + session listener
     ├── auth.js              # login / signup / logout
     ├── config.js            # url + anon key injection
-    ├── db.js                # entries CRUD wrapper
-    ├── supabase-client.js   # creates the anon-key Supabase client
-    ├── styles.css           # calm DayOne aesthetic + dark mode
+    ├── db.js                # entries CRUD
+    ├── images.js            # storage upload + signed URL helpers
+    ├── markdown.js          # marked + DOMPurify + highlight.js
+    ├── supabase-client.js   # anon-key Supabase client
+    ├── theme.js             # light/dark toggle
+    ├── styles.css           # warm paper / warm dark
     └── views/
         ├── login.js
         ├── timeline.js
-        └── editor.js
+        ├── editor.js
+        └── reader.js
 ```
 
 ## Try it
 
-1. Open https://o5qco1jz96rtj.space.minimax.io
-2. Sign up with any email + a 6+ char password (real signup, sends
-   confirmation email — check your inbox or disable email confirmation
-   in the Supabase dashboard if you want immediate access)
-3. Write your first entry, pick a mood, save
-4. Sign out, sign in, your entries are still there
-5. Sign up a second account, confirm there's no cross-user visibility
+1. Open the live URL.
+2. Sign up with any email + a 6+ char password — sign-in is immediate
+   (autoconfirm on).
+3. Write an entry, pick a mood, attach an image, save.
+4. Click an entry on the timeline → read view. Edit or Delete from
+   the card footer or the reader.
+5. Toggle the theme (☾ / ☼) — choice persists across reloads.
 
 ## V2 ideas (not implemented)
 
 - Tags + tag filter
-- Photo attachments via Supabase Storage (with RLS on `storage.objects`)
 - Calendar grid view
-- Markdown rendering
+- Markdown extensions (footnotes, math, mermaid)
 - End-to-end encryption of entry bodies
 - PWA / offline support
 - Custom domain
+- Replace legacy anon JWT with the `sb_publishable_*` key on hosts
+  that support it
