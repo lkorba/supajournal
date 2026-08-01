@@ -1814,3 +1814,81 @@ button {
   font-size: 0.92rem;
   line-height: 1.45;
 }
+
+/* ===================================================================== */
+/* v2: prompt of the day, stats card, editor word count                  */
+/* ===================================================================== */
+
+.prompt-of-the-day {
+  margin-top: 1.5rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--accent, #6b8a5a);
+  border-radius: 0.75rem;
+  background: var(--accent-soft, rgba(107, 138, 90, 0.12));
+  text-align: left;
+  max-width: 36rem;
+}
+.prompt-label {
+  margin: 0 0 0.3rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent, #6b8a5a);
+  font-weight: 700;
+}
+.prompt-text {
+  margin: 0 0 0.7rem;
+  font-size: 1.05rem;
+  font-style: italic;
+  color: var(--text, #3a2f24);
+}
+
+/* Stats card */
+.stats-card {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.1rem;
+  background: var(--surface-1, #fff8e7);
+  border: 1px solid var(--border, #d6c9a8);
+  border-radius: 0.75rem;
+}
+.stats-title {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-soft, #6b6357);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.6rem;
+}
+.stat-block {
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--surface-2, #f6efdc);
+  text-align: center;
+}
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent, #6b8a5a);
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: 0.78rem;
+  color: var(--text-soft, #6b6357);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 0.1rem;
+}
+
+/* Editor word count */
+.editor-body-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+.editor-word-count {
+  font-size: 0.8rem;
+  color: var(--text-soft, #6b6357);
+}

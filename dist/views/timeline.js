@@ -10,6 +10,7 @@ import { signImagePaths } from "../images.js";
 import { isMockMode } from "../config.js";
 import { makeThemeToggle } from "../theme.js";
 import { journalState } from "../journal-state.js";
+import { pickPromptOfTheDay } from "../prompts-state.js";
 
 // ----- DOM helper -----
 function el(tag, props = {}, children = []) {
@@ -73,6 +74,7 @@ export function renderTimelineView(root, {
   let allEntries = [];
   let journals = [];
   let allTags = [];
+  let promptOfTheDay = null;
   let searchTerm = "";
   let activeJournalId = journalState.getActiveJournalId();
   let activeTagId = null;
@@ -255,8 +257,9 @@ export function renderTimelineView(root, {
         tagId: activeTagId,
         onlyBookmarked: onlyBookmarked,
       }),
+      db.listPrompts(),
     ])
-      .then(([jRes, tRes, eRes]) => {
+      .then(([jRes, tRes, eRes, pRes]) => {
         if (myEpoch !== loadEpoch) return; // a newer load started; drop
         loading = false;
         if (jRes.error) {
@@ -274,6 +277,9 @@ export function renderTimelineView(root, {
           errorMsg = eRes.error.message || "Could not load entries.";
         } else {
           allEntries = eRes.data || [];
+        }
+        if (!pRes.error) {
+          promptOfTheDay = pickPromptOfTheDay(pRes.data || []);
         }
         paint();
       })
@@ -360,20 +366,33 @@ export function renderTimelineView(root, {
       : allEntries;
 
     if (filtered.length === 0) {
-      content.replaceChildren(
-        el("div", { class: "state state-empty" }, [
-          el("p", { class: "state-title", text: term ? "No matches" : "No entries yet" }),
-          el(
-            "p",
-            {
-              class: "state-sub",
-              text: term
-                ? "Try a different search term, or clear the search to see everything."
-                : "Tap the + button to write your first one.",
-            }
-          ),
-        ])
-      );
+      const empty = el("div", { class: "state state-empty" }, [
+        el("p", { class: "state-title", text: term ? "No matches" : "No entries yet" }),
+        el("p", {
+          class: "state-sub",
+          text: term
+            ? "Try a different search term, or clear the search to see everything."
+            : "Tap the + button to write your first one.",
+        }),
+      ]);
+      // If the user has no entries at all (regardless of search),
+      // show the prompt of the day as inspiration.
+      if (!term && allEntries.length === 0 && promptOfTheDay) {
+        empty.appendChild(
+          el("div", { class: "prompt-of-the-day" }, [
+            el("p", { class: "prompt-label", text: "Today's prompt" }),
+            el("p", { class: "prompt-text", text: promptOfTheDay.text }),
+            el("button", {
+              class: "btn btn-primary btn-small",
+              type: "button",
+              attrs: { id: "prompt-write-btn" },
+              on: { click: () => onNewEntry?.() },
+              text: "Start writing",
+            }),
+          ])
+        );
+      }
+      content.replaceChildren(empty);
       return;
     }
 
@@ -412,6 +431,13 @@ export function renderTimelineView(root, {
     }
 
     const frag = document.createDocumentFragment();
+
+    // Stats card at the top: total entries, total words, days with
+    // entries, current writing streak. Cheap to compute from the
+    // already-loaded list; no extra round-trip.
+    if (!term && allEntries.length > 0) {
+      frag.appendChild(renderStatsCard(allEntries));
+    }
 
     // "On This Day" section: entries from past years whose month+day
     // matches today. Only shown when there are any (and only on the
@@ -488,6 +514,82 @@ export function renderTimelineView(root, {
     }
     section.appendChild(list);
     return section;
+  }
+
+  function renderStatsCard(entries) {
+    // Compute a few simple stats client-side. No server round-trip.
+    const totalEntries = entries.length;
+    let totalWords = 0;
+    const daySet = new Set();
+    for (const e of entries) {
+      const wc = Number.isFinite(e.word_count) ? e.word_count : countWords(e.body || "");
+      totalWords += wc;
+      if (e.entry_date) daySet.add(e.entry_date);
+    }
+    const totalDays = daySet.size;
+    const streak = computeStreak(daySet);
+    const card = el("section", { class: "stats-card", attrs: { id: "stats-card" } });
+    card.appendChild(
+      el("h2", { class: "stats-title", text: "Your writing" })
+    );
+    const grid = el("div", { class: "stats-grid" });
+    grid.appendChild(
+      statBlock("Entries", String(totalEntries))
+    );
+    grid.appendChild(
+      statBlock("Words", formatBigNumber(totalWords))
+    );
+    grid.appendChild(
+      statBlock("Days written", String(totalDays))
+    );
+    grid.appendChild(
+      statBlock("Streak", streak > 0 ? `${streak} day${streak === 1 ? "" : "s"}` : "—")
+    );
+    card.appendChild(grid);
+    return card;
+  }
+
+  function statBlock(label, value) {
+    return el("div", { class: "stat-block" }, [
+      el("div", { class: "stat-value", text: value }),
+      el("div", { class: "stat-label", text: label }),
+    ]);
+  }
+
+  function countWords(s) {
+    const t = String(s || "").trim();
+    if (!t) return 0;
+    return t.split(/\s+/).length;
+  }
+
+  function formatBigNumber(n) {
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(1) + "k";
+    if (n < 1_000_000) return Math.round(n / 1000) + "k";
+    return (n / 1_000_000).toFixed(1) + "M";
+  }
+
+  function computeStreak(daySet) {
+    // Walk back from today; count consecutive days that have an entry.
+    // Breaks on the first missing day. Today not being in the set
+    // doesn't break the streak — it just makes the current value
+    // 0 (we don't count today as "still going" if nothing was
+    // written yet today).
+    if (daySet.size === 0) return 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const ymd = (d) => d.toISOString().slice(0, 10);
+    // If today is missing, the streak is "broken" for today but
+    // yesterday may still count. We treat that as 0 (no active
+    // streak) — DayOne does the same.
+    if (!daySet.has(ymd(today))) return 0;
+    let count = 0;
+    let cursor = new Date(today);
+    while (daySet.has(ymd(cursor))) {
+      count++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return count;
   }
 
   function renderOnThisDayCard(entry, signedByPath) {
