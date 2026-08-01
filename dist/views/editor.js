@@ -488,6 +488,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         bodyTabs,
         bodyTextarea,
         bodyPreview,
+        el("div", { class: "editor-body-footer" }, [wordCountEl]),
       ]),
     ]),
     el("div", { class: "editor-row" }, [
@@ -547,9 +548,33 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
 
   // Wire change events to state (no full repaint on every keystroke
   // because that would clobber the caret in the textarea).
-  titleInput.addEventListener("input", () => { state.title = titleInput.value; });
-  bodyTextarea.addEventListener("input", () => { state.body = bodyTextarea.value; });
+  titleInput.addEventListener("input", () => {
+    state.title = titleInput.value;
+    updateWordCount();
+  });
+  bodyTextarea.addEventListener("input", () => {
+    state.body = bodyTextarea.value;
+    updateWordCount();
+  });
   dateInput.addEventListener("change", () => { state.entry_date = dateInput.value || todayIso(); });
+
+  // Word count chip. Updated live as the user types. We also compute
+  // it on init from the loaded body and from the title (which is
+  // counted too — DayOne counts the title toward word total).
+  const wordCountEl = el("div", {
+    class: "editor-word-count",
+    attrs: { id: "editor-word-count", "aria-live": "polite" },
+    text: "0 words",
+  });
+  function countWords(s) {
+    const t = String(s || "").trim();
+    if (!t) return 0;
+    return t.split(/\s+/).length;
+  }
+  function updateWordCount() {
+    const wc = countWords(state.body) + countWords(state.title);
+    wordCountEl.textContent = `${wc.toLocaleString()} word${wc === 1 ? "" : "s"}`;
+  }
 
   // Init: load existing or set defaults
   if (entryId) {
@@ -587,6 +612,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
       state.mood = Number.isFinite(data.mood) ? data.mood : 3;
       state.entry_date = data.entry_date || todayIso();
       stateJournalId = data.journal_id || null;
+      updateWordCount();
       selectedTags = Array.isArray(data.tags) ? [...data.tags] : [];
       imagePaths = Array.isArray(data.image_paths) ? [...data.image_paths] : [];
       if (imagePaths.length > 0 && !isMockMode) {
@@ -627,6 +653,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         updateDeleteVisibility();
         paintImageGrid();
         repaintTagArea();
+        updateWordCount();
         setTimeout(() => titleInput.focus(), 0);
       });
   }
@@ -680,6 +707,9 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     saveBtn.textContent = "Saving…";
     try {
       const journalId = stateJournalId || journalSelect.value || null;
+      // Recompute word count at save time (title + body) so the
+      // value is consistent with what we just typed.
+      const wordCount = countWords(title) + countWords(body);
       let savedEntry = null;
       if (entryId) {
         const { data, error } = await db.updateEntry(entryId, {
@@ -689,6 +719,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
           entry_date,
           image_paths: imagePaths,
           journal_id: journalId,
+          word_count: wordCount,
         });
         if (error) throw error;
         entry = data;
@@ -704,6 +735,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
           entry_date,
           image_paths: imagePaths,
           journal_id: journalId,
+          word_count: wordCount,
         });
         if (error) throw error;
         entry = data;

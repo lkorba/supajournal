@@ -466,6 +466,32 @@ export const db = {
     return { data: tags, error: null };
   },
 
+  // ---- Prompts (global, read-only) ----
+  async listPrompts() {
+    if (isMockMode) {
+      // A small canned list so the empty-timeline UI is demoable.
+      await sleep(20);
+      return {
+        data: [
+          { id: "p-1", text: "What's one small thing you're grateful for today?", category: "gratitude" },
+          { id: "p-2", text: "What did you change your mind about recently, and why?", category: "reflection" },
+          { id: "p-3", text: "Describe today in three sentences, as if to a friend.", category: "reflection" },
+          { id: "p-4", text: "What's something you're looking forward to?", category: "forward" },
+          { id: "p-5", text: "What made you laugh today?", category: "joy" },
+          { id: "p-6", text: "What's been on your mind lately that you haven't said out loud?", category: "reflection" },
+        ],
+        error: null,
+      };
+    }
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("prompts")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    return { data: data || [], error };
+  },
+
   // ---- Entries ----
   async toggleBookmark(id) {
     // Read current state, flip it, write back. Two round-trips is
