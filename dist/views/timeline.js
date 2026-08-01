@@ -75,6 +75,7 @@ export function renderTimelineView(root, {
   let searchTerm = "";
   let activeJournalId = journalState.getActiveJournalId();
   let activeTagId = null;
+  let onlyBookmarked = false;
   // Signed URLs persist across paint() calls. We also keep a set of
   // paths we have already requested, so a re-paint (e.g. after a search
   // filter changes) does not re-sign the same paths. This also stops
@@ -125,6 +126,28 @@ export function renderTimelineView(root, {
     load();
   });
 
+  // Bookmarks-only toggle. Simple pressed/unpressed button — no
+  // separate view required, just a filter applied to listEntries.
+  const bookmarkToggle = el(
+    "button",
+    {
+      class: "btn btn-ghost btn-small bookmark-toggle",
+      attrs: {
+        id: "bookmark-toggle",
+        type: "button",
+        title: "Show bookmarked entries only",
+        "aria-pressed": "false",
+      },
+      on: { click: () => {
+        onlyBookmarked = !onlyBookmarked;
+        bookmarkToggle.classList.toggle("is-active", onlyBookmarked);
+        bookmarkToggle.setAttribute("aria-pressed", onlyBookmarked ? "true" : "false");
+        load();
+      } },
+    },
+    "★ Bookmarks"
+  );
+
   const manageJournalsBtn = el(
     "button",
     {
@@ -144,6 +167,7 @@ export function renderTimelineView(root, {
       el("div", { class: "header-journal-bar" }, [
         journalSelect,
         tagSelect,
+        bookmarkToggle,
         manageJournalsBtn,
       ]),
       el("div", { class: "header-actions" }, [
@@ -217,6 +241,7 @@ export function renderTimelineView(root, {
       db.listEntries({
         journalId: journalState.getActiveJournalId() || null,
         tagId: activeTagId,
+        onlyBookmarked: onlyBookmarked,
       }),
     ])
       .then(([jRes, tRes, eRes]) => {
@@ -479,7 +504,53 @@ export function renderTimelineView(root, {
       },
       "Delete"
     );
-    const actions = el("div", { class: "entry-actions" }, [editBtn, deleteBtn]);
+    // Bookmark star — small icon button on the card. Toggle updates
+    // the entry in place, then mutates the local list + repaints
+    // (without re-fetching from the server, which would re-sign every
+    // image and feel slow).
+    const isBookmarked = !!entry.is_bookmarked;
+    const starBtn = el(
+      "button",
+      {
+        class: "btn btn-ghost btn-small star-btn" + (isBookmarked ? " is-on" : ""),
+        attrs: {
+          type: "button",
+          "aria-label": (isBookmarked ? "Unbookmark" : "Bookmark") + ` ${title}`,
+          "aria-pressed": isBookmarked ? "true" : "false",
+          title: isBookmarked ? "Remove bookmark" : "Bookmark this entry",
+        },
+        on: {
+          click: async (ev) => {
+            ev.stopPropagation();
+            const before = !!entry.is_bookmarked;
+            // Optimistic flip: update the local entry + button so the
+            // user gets instant feedback, then sync with the server.
+            entry.is_bookmarked = !before;
+            starBtn.classList.toggle("is-on", !before);
+            starBtn.setAttribute("aria-pressed", !before ? "true" : "false");
+            starBtn.setAttribute("aria-label",
+              (!before ? "Unbookmark" : "Bookmark") + ` ${title}`);
+            starBtn.setAttribute("title",
+              !before ? "Remove bookmark" : "Bookmark this entry");
+            const { data, error } = await db.toggleBookmark(entry.id);
+            if (error) {
+              // Roll back the optimistic update on error.
+              entry.is_bookmarked = before;
+              starBtn.classList.toggle("is-on", before);
+              starBtn.setAttribute("aria-pressed", before ? "true" : "false");
+              window.alert(error.message || "Couldn't update bookmark.");
+              return;
+            }
+            if (data) entry.is_bookmarked = data.is_bookmarked;
+            // If we're filtering to bookmarks and we just unbookmarked
+            // an entry, refresh so it disappears.
+            if (onlyBookmarked && before) load();
+          },
+        },
+      },
+      isBookmarked ? "★" : "☆"
+    );
+    const actions = el("div", { class: "entry-actions" }, [starBtn, editBtn, deleteBtn]);
 
     // Build the card. The whole card is a click target for the reader;
     // the action buttons inside stop propagation so they don't.

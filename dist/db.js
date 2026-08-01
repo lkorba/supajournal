@@ -467,6 +467,39 @@ export const db = {
   },
 
   // ---- Entries ----
+  async toggleBookmark(id) {
+    // Read current state, flip it, write back. Two round-trips is
+    // fine for a v2 toggle; we don't need to be clever.
+    if (isMockMode) {
+      const idx = mockEntries.findIndex((e) => e.id === id);
+      if (idx === -1) return { data: null, error: { message: "Not found" } };
+      mockEntries[idx] = {
+        ...mockEntries[idx],
+        is_bookmarked: !mockEntries[idx].is_bookmarked,
+        updated_at: isoNow(),
+      };
+      return { data: mockEntries[idx], error: null };
+    }
+    const supabase = await getSupabase();
+    const { data: cur, error: readErr } = await supabase
+      .from("entries")
+      .select("is_bookmarked")
+      .eq("id", id)
+      .maybeSingle();
+    if (readErr) return { data: null, error: readErr };
+    if (!cur) return { data: null, error: { message: "Not found" } };
+    const { data, error } = await supabase
+      .from("entries")
+      .update({
+        is_bookmarked: !cur.is_bookmarked,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    return { data, error };
+  },
+
   async listEntries({ journalId, tagId, onlyBookmarked, search } = {}) {
     if (isMockMode) {
       await sleep(80);

@@ -156,6 +156,39 @@ export function renderReaderView(root, { entryId, onBack, onEdit, onDeleted }) {
     // Title block: title, then date + mood on a meta line.
     const titleEl = el("h1", { class: "reader-title", text: title });
 
+    // Star button — bookmark/unbookmark the entry from the reader.
+    const isBookmarked = !!entry.is_bookmarked;
+    const starBtn = el(
+      "button",
+      {
+        class: "btn btn-ghost btn-small star-btn" + (isBookmarked ? " is-on" : ""),
+        attrs: {
+          type: "button",
+          id: "reader-star",
+          "aria-label": isBookmarked ? "Unbookmark" : "Bookmark",
+          "aria-pressed": isBookmarked ? "true" : "false",
+          title: isBookmarked ? "Remove bookmark" : "Bookmark this entry",
+        },
+        on: {
+          click: async () => {
+            const before = !!entry.is_bookmarked;
+            entry.is_bookmarked = !before;
+            starBtn.classList.toggle("is-on", !before);
+            starBtn.setAttribute("aria-pressed", !before ? "true" : "false");
+            const { data, error } = await db.toggleBookmark(entry.id);
+            if (error) {
+              entry.is_bookmarked = before;
+              starBtn.classList.toggle("is-on", before);
+              window.alert(error.message || "Couldn't update bookmark.");
+              return;
+            }
+            if (data) entry.is_bookmarked = data.is_bookmarked;
+          },
+        },
+      },
+      isBookmarked ? "★ Bookmarked" : "☆ Bookmark"
+    );
+
     const meta = el("div", { class: "reader-meta" }, [
       el("span", { class: "reader-date", text: formatDateLong(entry.entry_date) }),
       mood
@@ -165,6 +198,7 @@ export function renderReaderView(root, { entryId, onBack, onEdit, onDeleted }) {
             attrs: { "aria-label": `Mood ${entry.mood}/5` },
           })
         : null,
+      starBtn,
     ]);
 
     // Full markdown body — no line clamp here, render the whole thing.

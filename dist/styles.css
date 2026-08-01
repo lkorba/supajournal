@@ -1591,3 +1591,29 @@ button {
   color: #fff;
   border-color: var(--accent, #6b8a5a);
 }
+
+/* ===================================================================== */
+/* v2: bookmark star, bookmarks-only toggle                              */
+/* ===================================================================== */
+
+.star-btn {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  min-width: 1.8rem;
+}
+.star-btn.is-on {
+  color: var(--accent, #6b8a5a);
+}
+:root[data-theme="dark"] .star-btn.is-on {
+  color: var(--accent, #8fbf85);
+}
+.bookmark-toggle {
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+.bookmark-toggle.is-active {
+  background: var(--accent, #6b8a5a);
+  color: #fff;
+  border-color: var(--accent, #6b8a5a);
+}
