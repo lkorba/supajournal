@@ -199,6 +199,18 @@ export function renderReaderView(root, { entryId, onBack, onEdit, onDeleted }) {
       }
     }
 
+    // Tag chips — shown above the body if any tags are set.
+    let tagRow = null;
+    if (Array.isArray(entry.tags) && entry.tags.length > 0) {
+      tagRow = el("div", { class: "tag-chip-row tag-chip-row-read" },
+        entry.tags.map((t) =>
+          el("span", { class: "tag-chip tag-chip-static" }, [
+            el("span", { class: "tag-chip-name", text: "#" + t.name }),
+          ])
+        )
+      );
+    }
+
     // Footer actions: Edit, Delete.
     const footer = el("div", { class: "reader-footer" }, [
       el("button", {
@@ -218,6 +230,7 @@ export function renderReaderView(root, { entryId, onBack, onEdit, onDeleted }) {
     const frag = document.createDocumentFragment();
     frag.appendChild(titleEl);
     if (meta.childNodes.length > 0) frag.appendChild(meta);
+    if (tagRow) frag.appendChild(tagRow);
     if (gallery && gallery.childNodes.length > 0) frag.appendChild(gallery);
     frag.appendChild(bodyEl);
     frag.appendChild(footer);

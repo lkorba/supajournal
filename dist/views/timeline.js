@@ -71,10 +71,10 @@ export function renderTimelineView(root, {
 }) {
   let allEntries = [];
   let journals = [];
+  let allTags = [];
   let searchTerm = "";
-  let loading = true;
-  let errorMsg = "";
   let activeJournalId = journalState.getActiveJournalId();
+  let activeTagId = null;
   // Signed URLs persist across paint() calls. We also keep a set of
   // paths we have already requested, so a re-paint (e.g. after a search
   // filter changes) does not re-sign the same paths. This also stops
@@ -113,6 +113,18 @@ export function renderTimelineView(root, {
     load();
   });
 
+  const tagSelect = el("select", {
+    class: "journal-switcher",
+    attrs: { id: "tag-switcher", "aria-label": "Filter by tag" },
+  });
+  tagSelect.appendChild(
+    el("option", { attrs: { value: "" }, text: "All tags" })
+  );
+  tagSelect.addEventListener("change", () => {
+    activeTagId = tagSelect.value || null;
+    load();
+  });
+
   const manageJournalsBtn = el(
     "button",
     {
@@ -131,6 +143,7 @@ export function renderTimelineView(root, {
       ]),
       el("div", { class: "header-journal-bar" }, [
         journalSelect,
+        tagSelect,
         manageJournalsBtn,
       ]),
       el("div", { class: "header-actions" }, [
@@ -200,11 +213,13 @@ export function renderTimelineView(root, {
     const myEpoch = ++loadEpoch;
     Promise.all([
       db.listJournals(userId()),
+      db.listTags(userId()),
       db.listEntries({
         journalId: journalState.getActiveJournalId() || null,
+        tagId: activeTagId,
       }),
     ])
-      .then(([jRes, eRes]) => {
+      .then(([jRes, tRes, eRes]) => {
         if (myEpoch !== loadEpoch) return; // a newer load started; drop
         loading = false;
         if (jRes.error) {
@@ -214,6 +229,10 @@ export function renderTimelineView(root, {
         journals = jRes.data || [];
         journalState.setCachedJournals(journals);
         rebuildJournalSelect();
+        if (!tRes.error) {
+          allTags = tRes.data || [];
+          rebuildTagSelect();
+        }
         if (eRes.error) {
           errorMsg = eRes.error.message || "Could not load entries.";
         } else {
@@ -257,6 +276,26 @@ export function renderTimelineView(root, {
     } else {
       journalSelect.value = "";
       if (wanted) journalState.setActiveJournalId(null);
+    }
+  }
+
+  function rebuildTagSelect() {
+    tagSelect.replaceChildren();
+    tagSelect.appendChild(
+      el("option", { attrs: { value: "" }, text: "All tags" })
+    );
+    for (const t of allTags) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = "#" + t.name;
+      tagSelect.appendChild(opt);
+    }
+    // Keep the active selection if the tag still exists.
+    if (activeTagId && allTags.some((t) => t.id === activeTagId)) {
+      tagSelect.value = activeTagId;
+    } else {
+      tagSelect.value = "";
+      activeTagId = null;
     }
   }
 
@@ -446,6 +485,32 @@ export function renderTimelineView(root, {
     // the action buttons inside stop propagation so they don't.
     const cardChildren = [titleEl];
     if (thumbs && thumbs.childNodes.length > 0) cardChildren.push(thumbs);
+    // Tag chips row (if any). Click a chip to filter the timeline by
+    // that tag — small but useful affordance.
+    if (Array.isArray(entry.tags) && entry.tags.length > 0) {
+      const tagRow = el("div", { class: "tag-chip-row tag-chip-row-card" });
+      for (const t of entry.tags) {
+        const chip = el(
+          "button",
+          {
+            type: "button",
+            class: "tag-chip tag-chip-clickable",
+            attrs: { "data-tag-id": t.id, title: `Filter by #${t.name}` },
+            on: {
+              click: (ev) => {
+                ev.stopPropagation();
+                activeTagId = t.id;
+                tagSelect.value = t.id;
+                load();
+              },
+            },
+          },
+          "#" + t.name
+        );
+        tagRow.appendChild(chip);
+      }
+      cardChildren.push(tagRow);
+    }
     cardChildren.push(bodyEl);
     const metaAndActions = el("div", { class: "entry-meta-row" }, [meta, actions]);
     cardChildren.push(metaAndActions);

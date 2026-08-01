@@ -48,6 +48,8 @@ function todayIso() {
 export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDeleted }) {
   let entry = null;
   let journals = journalState.getCachedJournals() || [];
+  let allTags = []; // [{id, name}, ...] for the current user
+  let selectedTags = []; // [{id, name}, ...] on this entry
   let loading = true;
   let saving = false;
   let savingError = "";
@@ -313,6 +315,134 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     stateJournalId = journalSelect.value || null;
   });
 
+  // Tag chip input. The user types a tag name; Enter or comma adds
+  // it. The currently-selected tags are shown as chips with × to
+  // remove. A list of suggestions (the user's existing tags, filtered
+  // by what's been typed) is shown below the input.
+  const tagInput = el("input", {
+    type: "text",
+    class: "input editor-tag-input",
+    placeholder: "Add a tag…",
+    maxlength: 40,
+  });
+  tagInput.id = "editor-tag-input";
+  tagInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === ",") {
+      ev.preventDefault();
+      addTypedTag();
+    } else if (ev.key === "Backspace" && tagInput.value === "" && selectedTags.length) {
+      // Backspace on an empty input pops the last chip.
+      selectedTags.pop();
+      repaintTagArea();
+    }
+  });
+  tagInput.addEventListener("input", () => {
+    repaintSuggestions();
+  });
+
+  const tagChips = el("div", { class: "tag-chip-row" });
+  const tagSuggest = el("div", { class: "tag-suggest" });
+  const tagArea = el("div", { class: "tag-area" }, [tagChips, tagInput, tagSuggest]);
+
+  function normalize(s) {
+    return String(s || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .slice(0, 40);
+  }
+
+  function addTag(tag) {
+    if (!tag || !tag.id) return;
+    if (selectedTags.some((t) => t.id === tag.id)) return;
+    selectedTags.push(tag);
+    selectedTags.sort((a, b) => a.name.localeCompare(b.name));
+    repaintTagArea();
+  }
+
+  async function addTypedTag() {
+    const text = tagInput.value.trim();
+    if (!text) return;
+    const norm = normalize(text);
+    if (!norm) {
+      tagInput.value = "";
+      return;
+    }
+    // Re-use an existing tag if its name matches.
+    const existing = allTags.find((t) => t.name === norm);
+    if (existing) {
+      addTag(existing);
+      tagInput.value = "";
+      return;
+    }
+    // Otherwise create a new tag and add it.
+    const { data, error } = await db.createTag({ user_id: userId, name: norm });
+    if (error) {
+      showError(error.message || "Couldn't add that tag.");
+      return;
+    }
+    if (data) {
+      allTags.push(data);
+      allTags.sort((a, b) => a.name.localeCompare(b.name));
+      addTag(data);
+      tagInput.value = "";
+    }
+  }
+
+  function removeTag(id) {
+    selectedTags = selectedTags.filter((t) => t.id !== id);
+    repaintTagArea();
+  }
+
+  function repaintTagArea() {
+    tagChips.replaceChildren(
+      ...selectedTags.map((t) =>
+        el("span", { class: "tag-chip", attrs: { "data-tag-id": t.id } }, [
+          el("span", { class: "tag-chip-name", text: "#" + t.name }),
+          el(
+            "button",
+            {
+              type: "button",
+              class: "tag-chip-remove",
+              attrs: { "aria-label": `Remove tag ${t.name}`, title: "Remove" },
+              on: { click: () => removeTag(t.id) },
+              text: "×"
+            }
+          ),
+        ])
+      )
+    );
+    repaintSuggestions();
+  }
+
+  function repaintSuggestions() {
+    const q = normalize(tagInput.value);
+    const selectedIds = new Set(selectedTags.map((t) => t.id));
+    const matches = allTags
+      .filter((t) => !selectedIds.has(t.id))
+      .filter((t) => (q ? t.name.includes(q) : true))
+      .slice(0, 8);
+    if (matches.length === 0) {
+      tagSuggest.replaceChildren();
+      tagSuggest.classList.remove("is-open");
+      return;
+    }
+    tagSuggest.classList.add("is-open");
+    tagSuggest.replaceChildren(
+      ...matches.map((t) =>
+        el(
+          "button",
+          {
+            type: "button",
+            class: "tag-suggest-item",
+            on: { click: () => { addTag(t); tagInput.value = ""; } },
+          },
+          "#" + t.name
+        )
+      )
+    );
+  }
+
   // Save / delete
   const status = el("div", { class: "editor-status", attrs: { id: "editor-status" } });
   const errorEl = el("div", { class: "auth-error", attrs: { id: "editor-error" } });
@@ -383,6 +513,12 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         journalSelect,
       ]),
     ]),
+    el("div", { class: "editor-row" }, [
+      el("label", { class: "editor-label" }, [
+        el("span", { text: "Tags" }),
+        tagArea,
+      ]),
+    ]),
     errorEl,
     el("div", { class: "editor-actions" }, [
       deleteBtn,
@@ -417,68 +553,72 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
 
   // Init: load existing or set defaults
   if (entryId) {
-    Promise.all([db.listJournals(userId), db.getEntry(entryId)]).then(
-      async ([jRes, eRes]) => {
-        loading = false;
-        if (jRes.error) {
-          // Journals failing to load is non-fatal for editing an
-          // existing entry; we just leave the selector empty.
-          // eslint-disable-next-line no-console
-          console.warn("Could not load journals:", jRes.error);
-        } else {
+    Promise.all([
+      db.listJournals(userId),
+      db.listTags(userId),
+      db.getEntry(entryId),
+    ]).then(async ([jRes, tRes, eRes]) => {
+      loading = false;
+      if (jRes.error) {
+        // Journals failing to load is non-fatal for editing an
+        // existing entry; we just leave the selector empty.
+        // eslint-disable-next-line no-console
+        console.warn("Could not load journals:", jRes.error);
+      } else {
+        journals = jRes.data || [];
+        journalState.setCachedJournals(journals);
+      }
+      if (!tRes.error) {
+        allTags = tRes.data || [];
+      }
+      if (eRes.error || !eRes.data) {
+        showError("Couldn't load that entry.");
+        return;
+      }
+      const data = eRes.data;
+      entry = data;
+      rebuildJournalSelect(data.journal_id);
+      titleInput.value = data.title || "";
+      bodyTextarea.value = data.body || "";
+      dateInput.value = data.entry_date || todayIso();
+      setMood(Number.isFinite(data.mood) ? data.mood : 3);
+      state.title = data.title || "";
+      state.body = data.body || "";
+      state.mood = Number.isFinite(data.mood) ? data.mood : 3;
+      state.entry_date = data.entry_date || todayIso();
+      stateJournalId = data.journal_id || null;
+      selectedTags = Array.isArray(data.tags) ? [...data.tags] : [];
+      imagePaths = Array.isArray(data.image_paths) ? [...data.image_paths] : [];
+      if (imagePaths.length > 0 && !isMockMode) {
+        try {
+          const signed = await signImagePaths(imagePaths);
+          for (const { path, url } of signed) signedUrlByPath.set(path, url);
+        } catch (_) { /* ok */ }
+      }
+      paintImageGrid();
+      repaintTagArea();
+      updateDeleteVisibility();
+    });
+  } else {
+    // New entry: load journals + tags, default the selector to the
+    // active journal (or the user's default journal, or "No journal").
+    Promise.all([db.listJournals(userId), db.listTags(userId)])
+      .then(([jRes, tRes]) => {
+        if (!jRes.error) {
           journals = jRes.data || [];
           journalState.setCachedJournals(journals);
-          rebuildJournalSelect(data.journal_id);
+          const defaultJournal = journals.find((j) => j.is_default);
+          const active = journalState.getActiveJournalId();
+          const target =
+            (active && journals.some((j) => j.id === active) && active) ||
+            (defaultJournal && defaultJournal.id) ||
+            null;
+          stateJournalId = target;
+          rebuildJournalSelect(target);
         }
-        if (eRes.error || !eRes.data) {
-          showError("Couldn't load that entry.");
-          return;
+        if (!tRes.error) {
+          allTags = tRes.data || [];
         }
-        const data = eRes.data;
-        entry = data;
-        titleInput.value = data.title || "";
-        bodyTextarea.value = data.body || "";
-        dateInput.value = data.entry_date || todayIso();
-        setMood(Number.isFinite(data.mood) ? data.mood : 3);
-        state.title = data.title || "";
-        state.body = data.body || "";
-        state.mood = Number.isFinite(data.mood) ? data.mood : 3;
-        state.entry_date = data.entry_date || todayIso();
-        stateJournalId = data.journal_id || null;
-        imagePaths = Array.isArray(data.image_paths) ? [...data.image_paths] : [];
-        if (imagePaths.length > 0 && !isMockMode) {
-          try {
-            const signed = await signImagePaths(imagePaths);
-            for (const { path, url } of signed) signedUrlByPath.set(path, url);
-          } catch (_) { /* ok */ }
-        }
-        paintImageGrid();
-        updateDeleteVisibility();
-      }
-    );
-  } else {
-    // New entry: load journals, default the selector to the active
-    // journal (or the user's default journal, or "No journal").
-    db.listJournals(userId)
-      .then(({ data, error }) => {
-        if (error) {
-          // Non-fatal; we just leave the selector empty.
-          // eslint-disable-next-line no-console
-          console.warn("Could not load journals:", error);
-          return;
-        }
-        journals = data || [];
-        journalState.setCachedJournals(journals);
-        // Resolve the default journal id (might be a freshly created
-        // user with only the auto-created "Daily" journal).
-        const defaultJournal = journals.find((j) => j.is_default);
-        const active = journalState.getActiveJournalId();
-        const target =
-          (active && journals.some((j) => j.id === active) && active) ||
-          (defaultJournal && defaultJournal.id) ||
-          null;
-        stateJournalId = target;
-        rebuildJournalSelect(target);
       })
       .finally(() => {
         loading = false;
@@ -486,7 +626,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         dateInput.value = todayIso();
         updateDeleteVisibility();
         paintImageGrid();
-        // Focus the title for a quick keyboard flow.
+        repaintTagArea();
         setTimeout(() => titleInput.focus(), 0);
       });
   }
@@ -540,6 +680,7 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     saveBtn.textContent = "Saving…";
     try {
       const journalId = stateJournalId || journalSelect.value || null;
+      let savedEntry = null;
       if (entryId) {
         const { data, error } = await db.updateEntry(entryId, {
           title,
@@ -551,9 +692,9 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         });
         if (error) throw error;
         entry = data;
+        savedEntry = data;
         setStatus("Saved");
         flashStatus();
-        onSaved?.(data);
       } else {
         const { data, error } = await db.createEntry({
           user_id: userId,
@@ -566,10 +707,26 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
         });
         if (error) throw error;
         entry = data;
+        savedEntry = data;
         setStatus("Saved");
         flashStatus();
-        onSaved?.(data, { isNew: true });
       }
+      // Save tags separately (they live in entry_tags). We always
+      // re-write the full set, even for an existing entry, so the
+      // displayed set is the source of truth.
+      const tagIds = selectedTags.map((t) => t.id).filter(Boolean);
+      const { error: tagErr } = await db.setEntryTags({
+        user_id: userId,
+        entry_id: savedEntry.id,
+        tagIds,
+      });
+      if (tagErr) {
+        // Don't fail the whole save — the entry is saved, the user
+        // just sees a softer warning.
+        showError("Entry saved, but couldn't save tags: " + (tagErr.message || ""));
+      }
+      // Return the entry with its tags for the caller.
+      onSaved?.({ ...savedEntry, tags: selectedTags });
     } catch (e) {
       showError(e?.message || "Couldn't save. Please try again.");
     } finally {

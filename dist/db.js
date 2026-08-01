@@ -126,6 +126,16 @@ let mockJournals = [
   },
 ];
 
+// ---- Mock tags + entry_tags -------------------------------------------------
+let mockTags = []; // {id, user_id, name, created_at}
+let mockEntryTags = []; // {entry_id, tag_id}
+function nextTagId() {
+  return "t-" + Math.random().toString(36).slice(2, 10);
+}
+function normalizeTagName(s) {
+  return String(s || "").trim().toLowerCase().replace(/\s+/g, "-").slice(0, 40);
+}
+
 // ------------------------------------------------------------------
 // Public API
 // ------------------------------------------------------------------
@@ -319,14 +329,155 @@ export const db = {
     return { data: { ok: !firstError }, error: firstError || null };
   },
 
+  // ---- Tags ----
+  async listTags(user_id) {
+    if (isMockMode) {
+      await sleep(20);
+      const data = mockTags
+        .filter((t) => t.user_id === user_id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return { data, error: null };
+    }
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("tags")
+      .select("*")
+      .eq("user_id", user_id)
+      .order("name", { ascending: true });
+    return { data: data || [], error };
+  },
+
+  async createTag({ user_id, name }) {
+    const normalized = normalizeTagName(name);
+    if (!normalized) {
+      return { data: null, error: { message: "Tag name is required" } };
+    }
+    if (isMockMode) {
+      await sleep(20);
+      const existing = mockTags.find(
+        (t) => t.user_id === user_id && t.name === normalized
+      );
+      if (existing) return { data: existing, error: null };
+      const record = {
+        id: nextTagId(),
+        user_id,
+        name: normalized,
+        created_at: isoNow(),
+      };
+      mockTags.push(record);
+      return { data: record, error: null };
+    }
+    const supabase = await getSupabase();
+    // Use upsert with onConflict so re-creating a deleted tag is fine.
+    // (We rely on the (user_id, name) UNIQUE constraint for the
+    // conflict target.) The simpler insert + handle-409 is also
+    // workable, but upsert makes the mock + live paths symmetric.
+    const { data, error } = await supabase
+      .from("tags")
+      .upsert(
+        { user_id, name: normalized },
+        { onConflict: "user_id,name", ignoreDuplicates: true }
+      )
+      .select()
+      .maybeSingle();
+    if (error) return { data: null, error };
+    if (data) return { data, error: null };
+    // ignoreDuplicates returned no row because the tag already
+    // existed — re-read it.
+    const { data: existing, error: e2 } = await supabase
+      .from("tags")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("name", normalized)
+      .maybeSingle();
+    return { data: existing, error: e2 };
+  },
+
+  async deleteTag(id) {
+    if (isMockMode) {
+      await sleep(20);
+      const before = mockTags.length;
+      mockTags = mockTags.filter((t) => t.id !== id);
+      mockEntryTags = mockEntryTags.filter((et) => et.tag_id !== id);
+      return { data: { ok: mockTags.length !== before }, error: null };
+    }
+    const supabase = await getSupabase();
+    const { error } = await supabase.from("tags").delete().eq("id", id);
+    return { data: { ok: !error }, error };
+  },
+
+  // Replace the full set of tags on an entry. Pass `tagIds: string[]`.
+  // Empty array clears all tags.
+  async setEntryTags({ user_id, entry_id, tagIds }) {
+    if (!Array.isArray(tagIds)) {
+      return { data: null, error: { message: "tagIds must be an array" } };
+    }
+    if (isMockMode) {
+      await sleep(20);
+      mockEntryTags = mockEntryTags.filter((et) => et.entry_id !== entry_id);
+      const seen = new Set();
+      for (const tid of tagIds) {
+        if (!tid || seen.has(tid)) continue;
+        // Only allow tags owned by this user.
+        const tag = mockTags.find((t) => t.id === tid && t.user_id === user_id);
+        if (!tag) continue;
+        mockEntryTags.push({ entry_id, tag_id: tid });
+        seen.add(tid);
+      }
+      return { data: { ok: true }, error: null };
+    }
+    const supabase = await getSupabase();
+    // Two-step: delete existing links, then insert the new ones.
+    // We do this in a single round-trip via /rpc if we add a helper,
+    // but for v2 the simple approach is fine.
+    const { error: delErr } = await supabase
+      .from("entry_tags")
+      .delete()
+      .eq("entry_id", entry_id);
+    if (delErr) return { data: null, error: delErr };
+    const rows = tagIds
+      .filter((tid) => typeof tid === "string" && tid.length)
+      .map((tag_id) => ({ entry_id, tag_id }));
+    if (rows.length === 0) return { data: { ok: true }, error: null };
+    const { error: insErr } = await supabase.from("entry_tags").insert(rows);
+    return { data: { ok: !insErr }, error: insErr };
+  },
+
+  async getEntryTags(entry_id) {
+    if (isMockMode) {
+      await sleep(10);
+      const ids = mockEntryTags
+        .filter((et) => et.entry_id === entry_id)
+        .map((et) => et.tag_id);
+      const tags = mockTags.filter((t) => ids.includes(t.id));
+      return { data: tags, error: null };
+    }
+    const supabase = await getSupabase();
+    // Use the embed form: entry_tags(tag:tags(*)) → [{tag: {...}}, ...]
+    const { data, error } = await supabase
+      .from("entry_tags")
+      .select("tag:tags(*)")
+      .eq("entry_id", entry_id);
+    if (error) return { data: null, error };
+    const tags = (data || [])
+      .map((row) => row.tag)
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { data: tags, error: null };
+  },
+
   // ---- Entries ----
   async listEntries({ journalId, tagId, onlyBookmarked, search } = {}) {
     if (isMockMode) {
       await sleep(80);
       let data = [...mockEntries];
       if (journalId) data = data.filter((e) => e.journal_id === journalId);
-      // tags/bookmarks/search aren't part of the journal commit; they're
-      // handled in their own features. Listed here for forward-compat.
+      if (tagId) {
+        const tagged = new Set(
+          mockEntryTags.filter((et) => et.tag_id === tagId).map((et) => et.entry_id)
+        );
+        data = data.filter((e) => tagged.has(e.id));
+      }
       if (onlyBookmarked) data = data.filter((e) => e.is_bookmarked);
       if (search) {
         const q = String(search).toLowerCase();
@@ -336,6 +487,15 @@ export const db = {
             (e.body || "").toLowerCase().includes(q)
         );
       }
+      // Decorate with tags.
+      data = data.map((e) => {
+        const ids = mockEntryTags
+          .filter((et) => et.entry_id === e.id)
+          .map((et) => et.tag_id);
+        const tags = mockTags.filter((t) => ids.includes(t.id));
+        tags.sort((a, b) => a.name.localeCompare(b.name));
+        return { ...e, tags };
+      });
       data.sort((a, b) => {
         if (a.entry_date !== b.entry_date) {
           return a.entry_date < b.entry_date ? 1 : -1;
@@ -345,9 +505,12 @@ export const db = {
       return { data, error: null };
     }
     const supabase = await getSupabase();
-    let q = supabase.from("entries").select("*");
+    // Embed tags via entry_tags(tag:tags(*)) so the timeline can show
+    // them without a second round-trip per card.
+    let q = supabase.from("entries").select("*, entry_tags(tag:tags(*))");
     if (journalId) q = q.eq("journal_id", journalId);
     if (onlyBookmarked) q = q.eq("is_bookmarked", true);
+    if (tagId) q = q.eq("entry_tags.tag_id", tagId);
     if (search) {
       const safe = String(search).replace(/[%_]/g, (m) => "\\" + m);
       q = q.or(`title.ilike.%${safe}%,body.ilike.%${safe}%`);
@@ -355,22 +518,46 @@ export const db = {
     const { data, error } = await q
       .order("entry_date", { ascending: false })
       .order("created_at", { ascending: false });
-    return { data: data || [], error };
+    if (error) return { data: [], error };
+    // Flatten the embed: each row's `entry_tags` becomes a sorted
+    // `tags: [{id, name}, ...]` array.
+    const rows = (data || []).map((row) => {
+      const tags = (row.entry_tags || [])
+        .map((et) => et.tag)
+        .filter(Boolean)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const { entry_tags, ...rest } = row;
+      return { ...rest, tags };
+    });
+    return { data: rows, error: null };
   },
 
   async getEntry(id) {
     if (isMockMode) {
       await sleep(40);
       const data = mockEntries.find((e) => e.id === id) || null;
-      return { data, error: data ? null : { message: "Not found" } };
+      if (!data) return { data: null, error: { message: "Not found" } };
+      // Decorate with tags.
+      const ids = mockEntryTags
+        .filter((et) => et.entry_id === data.id)
+        .map((et) => et.tag_id);
+      const tags = mockTags.filter((t) => ids.includes(t.id));
+      tags.sort((a, b) => a.name.localeCompare(b.name));
+      return { data: { ...data, tags }, error: null };
     }
     const supabase = await getSupabase();
     const { data, error } = await supabase
       .from("entries")
-      .select("*")
+      .select("*, entry_tags(tag:tags(*))")
       .eq("id", id)
       .maybeSingle();
-    return { data, error };
+    if (error || !data) return { data, error };
+    const tags = (data.entry_tags || [])
+      .map((et) => et.tag)
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const { entry_tags, ...rest } = data;
+    return { data: { ...rest, tags }, error: null };
   },
 
   async createEntry({
