@@ -1744,3 +1744,73 @@ button {
 .entry-card-compact .entry-body {
   font-size: 0.92rem;
 }
+
+/* ===================================================================== */
+/* v2: On This Day section                                                */
+/* ===================================================================== */
+
+.on-this-day {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.1rem;
+  background: var(--surface-1, #fff8e7);
+  border: 1px solid var(--border, #d6c9a8);
+  border-radius: 0.75rem;
+}
+.on-this-day-title {
+  margin: 0 0 0.15rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--accent, #6b8a5a);
+}
+.on-this-day-sub {
+  margin: 0 0 0.7rem;
+  color: var(--text-soft, #6b6357);
+  font-size: 0.9rem;
+}
+.on-this-day-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.on-this-day-card {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border, #d6c9a8);
+  border-radius: 0.5rem;
+  background: var(--surface-2, #f6efdc);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+.on-this-day-card:hover {
+  background: var(--accent-soft, rgba(107, 138, 90, 0.18));
+}
+.on-this-day-card:focus-visible {
+  outline: 2px solid var(--accent, #6b8a5a);
+  outline-offset: 2px;
+}
+.on-this-day-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+.on-this-day-year {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--accent, #6b8a5a);
+  color: #fff;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+}
+.on-this-day-title-text {
+  font-weight: 600;
+}
+.on-this-day-card-body {
+  color: var(--text-soft, #6b6357);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}

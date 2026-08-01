@@ -412,6 +412,19 @@ export function renderTimelineView(root, {
     }
 
     const frag = document.createDocumentFragment();
+
+    // "On This Day" section: entries from past years whose month+day
+    // matches today. Only shown when there are any (and only on the
+    // main timeline — i.e. when no search is active and the date
+    // group for today is visible). We deliberately exclude today's
+    // entries; the user is already looking at those.
+    if (!term && !onlyBookmarked) {
+      const onThisDay = collectOnThisDay(allEntries);
+      if (onThisDay.length > 0) {
+        frag.appendChild(renderOnThisDaySection(onThisDay, signedUrlByPath));
+      }
+    }
+
     for (const [dateKey, items] of groups) {
       frag.appendChild(
         el("section", { class: "day-group", attrs: { "data-date": dateKey } }, [
@@ -425,6 +438,95 @@ export function renderTimelineView(root, {
       );
     }
     content.replaceChildren(frag);
+  }
+
+  // Collect entries from past years with the same MM-DD as today.
+  // Returns them sorted oldest -> newest so the "time jump" feels
+  // like scrolling through a memory reel.
+  function collectOnThisDay(entries) {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const todayIso = now.toISOString().slice(0, 10);
+    const yyyy = now.getFullYear();
+    const out = [];
+    for (const e of entries) {
+      if (!e.entry_date || typeof e.entry_date !== "string") continue;
+      if (e.entry_date === todayIso) continue; // today — already shown above
+      // entry_date is YYYY-MM-DD
+      const parts = e.entry_date.split("-");
+      if (parts.length !== 3) continue;
+      const [ey, emm, edd] = parts;
+      if (emm !== mm || edd !== dd) continue;
+      if (Number(ey) >= yyyy) continue;
+      out.push(e);
+    }
+    out.sort((a, b) => (a.entry_date < b.entry_date ? -1 : 1));
+    return out;
+  }
+
+  function renderOnThisDaySection(items, signedByPath) {
+    const section = el("section", {
+      class: "on-this-day",
+      attrs: { "data-on-this-day": "1" },
+    });
+    section.appendChild(
+      el("h2", {
+        class: "on-this-day-title",
+        text: "🕰 On This Day",
+      })
+    );
+    section.appendChild(
+      el("p", {
+        class: "on-this-day-sub",
+        text: `Entries you wrote on this day in past years.`,
+      })
+    );
+    const list = el("ul", { class: "entry-list on-this-day-list" });
+    for (const entry of items) {
+      list.appendChild(renderOnThisDayCard(entry, signedByPath));
+    }
+    section.appendChild(list);
+    return section;
+  }
+
+  function renderOnThisDayCard(entry, signedByPath) {
+    // Compact card: year tag + title + a body preview. Click anywhere
+    // to open the reader. We deliberately do NOT use the full
+    // renderEntryCard so the visual is quieter and the section
+    // stays scannable.
+    const year = (entry.entry_date || "").slice(0, 4) || "—";
+    const title = entry.title?.trim() || "Untitled";
+    const preview = truncate(entry.body || "", 220);
+
+    const titleEl = el("h3", { class: "on-this-day-card-title" }, [
+      el("span", { class: "on-this-day-year", text: year }),
+      el("span", { class: "on-this-day-title-text", text: title }),
+    ]);
+    const bodyEl = el("div", { class: "on-this-day-card-body", text: preview });
+
+    return el(
+      "li",
+      {
+        class: "on-this-day-card",
+        attrs: {
+          "data-entry-id": entry.id,
+          tabindex: "0",
+          role: "button",
+          "aria-label": `Read entry from ${year}: ${title}`,
+        },
+        on: {
+          click: () => onOpenEntry?.(entry.id),
+          keydown: (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              onOpenEntry?.(entry.id);
+            }
+          },
+        },
+      },
+      [titleEl, bodyEl]
+    );
   }
 
   function renderEntryCard(entry, signedByPath) {
