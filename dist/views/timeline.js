@@ -67,6 +67,7 @@ export function renderTimelineView(root, {
   onNewEntry,
   onSignOut,
   onManageJournals,
+  onOpenCalendar,
   userEmail,
 }) {
   let allEntries = [];
@@ -158,6 +159,16 @@ export function renderTimelineView(root, {
     "⚙ Journals"
   );
 
+  const calendarBtn = el(
+    "button",
+    {
+      class: "btn btn-ghost btn-small",
+      attrs: { id: "open-calendar-btn", title: "Open calendar" },
+      on: { click: () => onOpenCalendar?.() },
+    },
+    "📅 Calendar"
+  );
+
   const header = el("header", { class: "app-header" }, [
     el("div", { class: "app-header-inner" }, [
       el("div", { class: "brand brand-small" }, [
@@ -168,6 +179,7 @@ export function renderTimelineView(root, {
         journalSelect,
         tagSelect,
         bookmarkToggle,
+        calendarBtn,
         manageJournalsBtn,
       ]),
       el("div", { class: "header-actions" }, [

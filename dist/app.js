@@ -17,6 +17,7 @@ import { renderTimelineView } from "./views/timeline.js";
 import { renderEditorView } from "./views/editor.js";
 import { renderReaderView } from "./views/reader.js";
 import { renderJournalsView } from "./views/journals.js";
+import { renderCalendarView } from "./views/calendar.js";
 
 const root = () => document.getElementById("app");
 
@@ -32,10 +33,12 @@ function parseRoute(hash) {
   //   "/entry/<id>"        -> reader
   //   "/entry/<id>/edit"   -> editor (edit existing)
   //   "/journals"          -> journal management
+  //   "/calendar"          -> month-grid calendar
   const clean = (hash || "").replace(/^#/, "");
   if (clean === "" || clean === "/") return { name: "timeline", entryId: null };
   if (clean === "/new") return { name: "editor", entryId: null };
   if (clean === "/journals") return { name: "journals", entryId: null };
+  if (clean === "/calendar") return { name: "calendar", entryId: null };
   const m = clean.match(/^\/entry\/([\w-]+)(?:\/(edit))?$/);
   if (m) {
     return m[2] === "edit"
@@ -53,6 +56,7 @@ function setRoute(next, { replace = false } = {}) {
   else if (next.name === "editor" && !next.entryId) hash = "#/new";
   else if (next.name === "reader" && next.entryId) hash = `#/entry/${next.entryId}`;
   else if (next.name === "journals") hash = "#/journals";
+  else if (next.name === "calendar") hash = "#/calendar";
   if (replace) {
     history.replaceState(null, "", hash);
   } else {
@@ -89,12 +93,22 @@ function render() {
       onDeleteEntry: (id) => deleteEntryAndGoHome(id),
       onSignOut: () => signOut(),
       onManageJournals: () => setRoute({ name: "journals", entryId: null }),
+      onOpenCalendar: () => setRoute({ name: "calendar", entryId: null }),
     });
   } else if (route.name === "journals") {
     renderJournalsView(root(), {
       userId,
       userEmail,
       onBack: () => setRoute({ name: "timeline", entryId: null }, { replace: true }),
+    });
+  } else if (route.name === "calendar") {
+    renderCalendarView(root(), {
+      userId,
+      userEmail,
+      onBack: () => setRoute({ name: "timeline", entryId: null }, { replace: true }),
+      onOpenEntry: (id) => setRoute({ name: "reader", entryId: id }),
+      onNewEntry: () => setRoute({ name: "editor", entryId: null }),
+      onSignOut: () => signOut(),
     });
   } else if (route.name === "reader") {
     renderReaderView(root(), {
