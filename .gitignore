@@ -7,3 +7,4 @@ node_modules/
 .idea/
 .vscode/
 scripts/
+pr_body_*.md
