@@ -14,7 +14,7 @@ Supabase (auth, REST, Storage).
 
 ## Live demo
 
-A reference deployment is at <https://nm99lib2eb4jx.space.minimax.io>.
+A reference deployment is at <https://4f5bl3w4amd5s.space.minimax.io>.
 The `dist/` directory is ready to drop on any static host (Netlify,
 Vercel, S3+CloudFront, GitHub Pages, etc.) — no build step.
 
