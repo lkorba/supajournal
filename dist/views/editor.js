@@ -315,6 +315,27 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     stateJournalId = journalSelect.value || null;
   });
 
+  // Word count chip. Updated live as the user types. We also compute
+  // it on init from the loaded body and from the title (which is
+  // counted too — DayOne counts the title toward word total).
+  // Defined BEFORE the form layout so it's in scope when the form
+  // references it (a const reference above its declaration would
+  // hit the temporal dead zone and throw on render).
+  const wordCountEl = el("div", {
+    class: "editor-word-count",
+    attrs: { id: "editor-word-count", "aria-live": "polite" },
+    text: "0 words",
+  });
+  function countWords(s) {
+    const t = String(s || "").trim();
+    if (!t) return 0;
+    return t.split(/\s+/).length;
+  }
+  function updateWordCount() {
+    const wc = countWords(state.body) + countWords(state.title);
+    wordCountEl.textContent = `${wc.toLocaleString()} word${wc === 1 ? "" : "s"}`;
+  }
+
   // Tag chip input. The user types a tag name; Enter or comma adds
   // it. The currently-selected tags are shown as chips with × to
   // remove. A list of suggestions (the user's existing tags, filtered
@@ -557,24 +578,6 @@ export function renderEditorView(root, { entryId, userId, onBack, onSaved, onDel
     updateWordCount();
   });
   dateInput.addEventListener("change", () => { state.entry_date = dateInput.value || todayIso(); });
-
-  // Word count chip. Updated live as the user types. We also compute
-  // it on init from the loaded body and from the title (which is
-  // counted too — DayOne counts the title toward word total).
-  const wordCountEl = el("div", {
-    class: "editor-word-count",
-    attrs: { id: "editor-word-count", "aria-live": "polite" },
-    text: "0 words",
-  });
-  function countWords(s) {
-    const t = String(s || "").trim();
-    if (!t) return 0;
-    return t.split(/\s+/).length;
-  }
-  function updateWordCount() {
-    const wc = countWords(state.body) + countWords(state.title);
-    wordCountEl.textContent = `${wc.toLocaleString()} word${wc === 1 ? "" : "s"}`;
-  }
 
   // Init: load existing or set defaults
   if (entryId) {
