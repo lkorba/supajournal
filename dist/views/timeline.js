@@ -131,14 +131,17 @@ export function renderTimelineView(root, {
 
   // Bookmarks-only toggle. Simple pressed/unpressed button — no
   // separate view required, just a filter applied to listEntries.
+  // Icon-only with the label in title/aria-label so the header
+  // doesn't get too wide on small screens.
   const bookmarkToggle = el(
     "button",
     {
-      class: "btn btn-ghost btn-small bookmark-toggle",
+      class: "btn btn-ghost btn-small btn-icon bookmark-toggle",
       attrs: {
         id: "bookmark-toggle",
         type: "button",
         title: "Show bookmarked entries only",
+        "aria-label": "Show bookmarked entries only",
         "aria-pressed": "false",
       },
       on: { click: () => {
@@ -148,54 +151,59 @@ export function renderTimelineView(root, {
         load();
       } },
     },
-    "★ Bookmarks"
+    "★"
   );
 
   const manageJournalsBtn = el(
     "button",
     {
-      class: "btn btn-ghost btn-small",
-      attrs: { id: "manage-journals-btn", title: "Manage journals" },
+      class: "btn btn-ghost btn-small btn-icon",
+      attrs: { id: "manage-journals-btn", title: "Manage journals", "aria-label": "Manage journals" },
       on: { click: () => onManageJournals?.() },
     },
-    "⚙ Journals"
+    "⚙"
   );
 
   const calendarBtn = el(
     "button",
     {
-      class: "btn btn-ghost btn-small",
-      attrs: { id: "open-calendar-btn", title: "Open calendar" },
+      class: "btn btn-ghost btn-small btn-icon",
+      attrs: { id: "open-calendar-btn", title: "Open calendar", "aria-label": "Open calendar" },
       on: { click: () => onOpenCalendar?.() },
     },
-    "📅 Calendar"
+    "📅"
   );
 
+  // Two-row header: top = brand + user actions, bottom = filters.
+  // The filter row keeps the timeline's switchers / icon buttons
+  // from crowding the user actions on narrower screens.
   const header = el("header", { class: "app-header" }, [
-    el("div", { class: "app-header-inner" }, [
-      el("div", { class: "brand brand-small" }, [
-        el("div", { class: "brand-mark", text: "✦" }),
-        el("div", { class: "brand-name", text: "Quiet" }),
+    el("div", { class: "app-header-inner app-header-inner--stacked" }, [
+      el("div", { class: "header-row header-row-user" }, [
+        el("div", { class: "brand brand-small" }, [
+          el("div", { class: "brand-mark", text: "✦" }),
+          el("div", { class: "brand-name", text: "Quiet" }),
+        ]),
+        el("div", { class: "header-actions" }, [
+          makeThemeToggle(),
+          headerEmail,
+          el(
+            "button",
+            {
+              class: "btn btn-ghost btn-small",
+              attrs: { id: "logout-btn", title: "Sign out" },
+              on: { click: () => onSignOut?.() },
+            },
+            "Sign out"
+          ),
+        ]),
       ]),
-      el("div", { class: "header-journal-bar" }, [
+      el("div", { class: "header-row header-row-filters" }, [
         journalSelect,
         tagSelect,
         bookmarkToggle,
         calendarBtn,
         manageJournalsBtn,
-      ]),
-      el("div", { class: "header-actions" }, [
-        makeThemeToggle(),
-        headerEmail,
-        el(
-          "button",
-          {
-            class: "btn btn-ghost btn-small",
-            attrs: { id: "logout-btn", title: "Sign out" },
-            on: { click: () => onSignOut?.() },
-          },
-          "Sign out"
-        ),
       ]),
     ]),
   ]);

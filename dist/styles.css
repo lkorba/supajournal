@@ -206,10 +206,36 @@ button {
   justify-content: space-between;
   gap: 12px;
 }
+/* The timeline uses a stacked two-row layout (user row + filter row)
+   instead of cramming everything into a single line. */
+.app-header-inner--stacked {
+  height: auto;
+  min-height: var(--header-h);
+  padding: 8px 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.header-row-user {
+  justify-content: space-between;
+}
+.header-row-filters {
+  flex-wrap: wrap;
+  row-gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
 .header-actions {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .header-email {
   color: var(--text-muted);
@@ -219,7 +245,7 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-@media (max-width: 480px) {
+@media (max-width: 720px) {
   .header-email {
     display: none;
   }
@@ -279,6 +305,14 @@ button {
 .btn-small {
   padding: 6px 12px;
   font-size: 13px;
+  white-space: nowrap;
+}
+.btn-icon {
+  padding: 6px 10px;
+  min-width: 2.1rem;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1;
 }
 .btn.is-loading::after {
   content: "";
@@ -706,7 +740,7 @@ button {
     padding: 16px 16px 120px;
   }
   .app-header-inner {
-    padding: 0 16px;
+    padding: 8px 16px;
   }
 }
 
@@ -1333,13 +1367,16 @@ button {
 /* ===================================================================== */
 
 /* Journal switcher in the timeline header */
-.header-journal-bar {
+.header-row-filters {
+  /* The dedicated filter row, separated from the user bar by a
+     thin top border. Flex-wrap so the controls stack on narrow
+     screens instead of overflowing. */
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex: 1 1 auto;
+  flex-wrap: wrap;
+  row-gap: 0.4rem;
   min-width: 0;
-  padding: 0 1rem;
 }
 .journal-switcher {
   appearance: none;
@@ -1351,7 +1388,8 @@ button {
   font-size: 0.95rem;
   font-family: inherit;
   cursor: pointer;
-  max-width: 22rem;
+  max-width: 16rem;
+  min-width: 0;
   text-overflow: ellipsis;
   /* tiny "▾" arrow */
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
